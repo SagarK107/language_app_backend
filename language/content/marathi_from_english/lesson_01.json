@@ -1,0 +1,30 @@
+{
+  "course": "Marathi from English",
+  "order": 1,
+  "title": "Letters and Basics 1",
+  "grammar_note": "",
+  "items": [
+    { "kind": "character", "script": "अ", "transliteration": "a" },
+    { "kind": "character", "script": "आ", "transliteration": "aa" },
+    { "kind": "character", "script": "इ", "transliteration": "i" },
+    {
+      "kind": "character",
+      "script": "ई",
+      "transliteration": "ii",
+      "hint": "Long form of इ. In everyday speech the two sound very similar."
+    },
+    { "kind": "character", "script": "उ", "transliteration": "u" },
+    {
+      "kind": "character",
+      "script": "ऊ",
+      "transliteration": "uu",
+      "hint": "Long form of उ."
+    },
+    { "kind": "word", "script": "अननस", "transliteration": "ananas", "meaning": "pineapple" },
+    { "kind": "word", "script": "आई", "transliteration": "aaii", "meaning": "mother" },
+    { "kind": "word", "script": "आंबा", "transliteration": "aambaa", "meaning": "mango" },
+    { "kind": "word", "script": "इमारत", "transliteration": "imaarat", "meaning": "building" },
+    { "kind": "word", "script": "उशी", "transliteration": "ushii", "meaning": "pillow" },
+    { "kind": "word", "script": "ऊस", "transliteration": "uus", "meaning": "sugarcane" }
+  ]
+}
