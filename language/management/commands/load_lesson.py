@@ -58,8 +58,8 @@ class Command(BaseCommand):
                 lesson=lesson,
                 order=position,
                 kind=entry["kind"],
-                source_language_script=entry["script"],
-                target_language_transliteration=entry["transliteration"],
+                text=entry["script"],
+                transliteration=entry["transliteration"],
                 meaning=entry.get("meaning", ""),
                 hint=entry.get("hint", ""),
             )

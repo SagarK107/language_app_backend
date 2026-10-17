@@ -3,11 +3,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Course, UserActiveCourse
+from .models import Course, Lesson, UserActiveCourse
 from .serializers import (
     ActiveCourseSerializer,
     CourseDetailSerializer,
     CourseSerializer,
+    LessonDetailSerializer,
 )
 
 # Create your views here.
@@ -37,3 +38,9 @@ class ActiveCourseView(APIView):
         )
 
         return Response(ActiveCourseSerializer(active_course).data)
+
+
+class LessonDetailView(generics.RetrieveAPIView):
+    queryset = Lesson.objects.prefetch_related("items")
+    permission_classes = [IsAuthenticated]
+    serializer_class = LessonDetailSerializer

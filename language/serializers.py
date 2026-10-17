@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Course, Lesson, UserActiveCourse
+from .models import Course, Item, Lesson, UserActiveCourse
 
 
 class CourseSerializer(serializers.ModelSerializer):
@@ -27,3 +27,17 @@ class ActiveCourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserActiveCourse
         fields = ["course"]
+
+
+class ItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Item
+        fields = ["id", "kind", "text", "transliteration", "meaning", "hint", "order"]
+
+
+class LessonDetailSerializer(serializers.ModelSerializer):
+    items = ItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Lesson
+        fields = ["id", "course", "title", "order", "grammar_note", "items"]

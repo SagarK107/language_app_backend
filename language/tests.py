@@ -48,7 +48,7 @@ class LoadLessonTests(TestCase):
         lesson = Lesson.objects.get(course=self.course, order=1)
         self.assertEqual(lesson.title, "Letters and Basics 1")
         self.assertEqual(
-            list(lesson.items.values_list("order", "source_language_script")),
+            list(lesson.items.values_list("order", "text")),
             [(1, "अ"), (2, "आई")],
         )
         self.assertEqual(lesson.items.get(order=2).meaning, "mother")
@@ -112,6 +112,7 @@ class CourseApiTests(APITestCase):
             ("get", "/api/courses/"),
             ("get", f"/api/courses/{self.course.id}/"),
             ("put", "/api/active-course/"),
+            ("get", f"/api/lessons/{self.lesson_1.id}/"),
         ]
 
         for method, url in requests:
@@ -266,3 +267,81 @@ class ActiveCourseTests(APITestCase):
         self.assertEqual(
             self.client.get("/api/me/").json()["active_course"], self.hindi_course.id
         )
+
+
+class LessonAPITests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="sagar", email="sagar@example.com", password=PASSWORD
+        )
+        self.course = Course.objects.create(
+            title="Marathi from English",
+            source_language="English",
+            target_language="Marathi",
+        )
+        self.lesson = Lesson.objects.create(
+            course=self.course, order=1, title="Letters and Basics 1"
+        )
+        # Created out of order, so the ordering test proves the API sorts the items.
+        self.item_2 = Item.objects.create(
+            lesson=self.lesson,
+            order=2,
+            kind="word",
+            text="आई",
+            transliteration="aaii",
+            meaning="mother",
+        )
+        self.item_1 = Item.objects.create(
+            lesson=self.lesson,
+            order=1,
+            kind="character",
+            text="अ",
+            transliteration="a",
+            hint="The first vowel.",
+        )
+        self.client.force_authenticate(self.user)
+
+    def test_unknown_lesson_returns_404(self):
+        response = self.client.get("/api/lessons/999/")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_lesson_detail_includes_items_in_order(self):
+        response = self.client.get(f"/api/lessons/{self.lesson.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "id": self.lesson.id,
+                "course": self.course.id,
+                "title": "Letters and Basics 1",
+                "order": 1,
+                "grammar_note": "",
+                "items": [
+                    {
+                        "id": self.item_1.id,
+                        "kind": "character",
+                        "text": "अ",
+                        "transliteration": "a",
+                        "meaning": "",
+                        "hint": "The first vowel.",
+                        "order": 1,
+                    },
+                    {
+                        "id": self.item_2.id,
+                        "kind": "word",
+                        "text": "आई",
+                        "transliteration": "aaii",
+                        "meaning": "mother",
+                        "hint": "",
+                        "order": 2,
+                    },
+                ],
+            },
+        )
+
+    def test_lesson_detail_loads_items_in_one_query(self):
+        # One query for the lesson and one for all of its items.
+        with self.assertNumQueries(2):
+            self.client.get(f"/api/lessons/{self.lesson.id}/")

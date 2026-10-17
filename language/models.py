@@ -55,8 +55,10 @@ class Lesson(models.Model):
 class Item(models.Model):
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="items")
     kind = models.CharField(max_length=15, choices=Kind.choices)
-    source_language_script = models.CharField(max_length=200)
-    target_language_transliteration = models.CharField(max_length=200)
+    # The item in the target language's own script, e.g. "आई".
+    text = models.CharField(max_length=200)
+    # How `text` is written in the learner's script, e.g. "aaii".
+    transliteration = models.CharField(max_length=200)
     meaning = models.CharField(max_length=200, blank=True)
     hint = models.CharField(max_length=300, blank=True)
     order = models.PositiveIntegerField()
@@ -70,7 +72,7 @@ class Item(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.source_language_script} ({self.target_language_transliteration}) - {self.kind}"
+        return f"{self.text} ({self.transliteration}) - {self.kind}"
 
 
 class UserActiveCourse(models.Model):
