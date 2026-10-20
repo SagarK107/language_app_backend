@@ -44,3 +44,4 @@ class LessonDetailView(generics.RetrieveAPIView):
     queryset = Lesson.objects.prefetch_related("items")
     permission_classes = [IsAuthenticated]
     serializer_class = LessonDetailSerializer
+

@@ -345,3 +345,4 @@ class LessonAPITests(APITestCase):
         # One query for the lesson and one for all of its items.
         with self.assertNumQueries(2):
             self.client.get(f"/api/lessons/{self.lesson.id}/")
+
