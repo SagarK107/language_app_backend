@@ -25,9 +25,9 @@ ignore = ["E501"]
 unfixable = ["F401"]
 
 [lint.per-file-ignores]
-# Tests use plain `assert` and hardcoded dummy passwords.
-"**/tests.py" = ["S101", "S105", "S106"]
-"**/tests/*.py" = ["S101", "S105", "S106"]
+# Tests use plain `assert`, hardcoded dummy passwords and seeded (non-crypto) random.
+"**/tests.py" = ["S101", "S105", "S106", "S311"]
+"**/tests/*.py" = ["S101", "S105", "S106", "S311"]
 
 [lint.isort]
 known-first-party = ["accounts", "language", "language_app"]

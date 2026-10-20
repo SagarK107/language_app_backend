@@ -1,4 +1,15 @@
+from django.core import signing
+
 from . import models
+
+# Labels the signature, so a token signed for answers is never accepted anywhere else.
+ANSWER_TOKEN_SALT = "language.questions.answer"  # noqa: S105
+ANSWER_TOKEN_MAX_AGE = 24 * 60 * 60  # seconds
+
+
+class InvalidTokenError(Exception):
+    """The answer token was changed, has expired, or belongs to another lesson."""
+
 
 QUESTION_MAPPING = {
     models.Kind.CHARACTER: [
@@ -15,7 +26,9 @@ QUESTION_MAPPING = {
 def display(item, side):
     return {
         "main": getattr(item, side),
-        "sub": item.transliteration if side == "text" else "",
+        "sub": item.transliteration
+        if side == "text" and item.kind == models.Kind.WORD
+        else "",
     }
 
 
@@ -85,3 +98,38 @@ def build_questions(lesson, rng):
             questions.append(question)
     rng.shuffle(questions)
     return questions
+
+
+def public_question(question, lesson):
+    """What the browser may see: the answer travels only inside the signed token."""
+    token = signing.dumps(
+        {
+            "lesson": lesson.id,
+            "item": question["item"].id,
+            "answer": question["answer"],
+        },
+        salt=ANSWER_TOKEN_SALT,
+    )
+    return {
+        "token": token,
+        "type": question["type"],
+        "prompt": question["prompt"],
+        "options": question["options"],
+    }
+
+
+def check_answer(token, lesson_id, choice):
+    """Compare `choice` with the answer sealed in `token`."""
+    try:
+        data = signing.loads(
+            token, salt=ANSWER_TOKEN_SALT, max_age=ANSWER_TOKEN_MAX_AGE
+        )
+    except signing.BadSignature as error:
+        # SignatureExpired is a subclass, so old tokens land here too.
+        raise InvalidTokenError from error
+
+    # A valid token from another lesson must not be accepted here.
+    if data["lesson"] != lesson_id:
+        raise InvalidTokenError
+
+    return {"correct": choice == data["answer"], "correct_choice": data["answer"]}

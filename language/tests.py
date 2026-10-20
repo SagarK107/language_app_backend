@@ -1,7 +1,9 @@
 import json
+import random
 import tempfile
 from pathlib import Path
 
+from django.core import signing
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
@@ -9,6 +11,7 @@ from rest_framework.test import APITestCase
 
 from accounts.models import User
 
+from . import questions
 from .models import Course, Item, Lesson, UserActiveCourse
 
 PASSWORD = "Xk9!long-pass"
@@ -113,6 +116,8 @@ class CourseApiTests(APITestCase):
             ("get", f"/api/courses/{self.course.id}/"),
             ("put", "/api/active-course/"),
             ("get", f"/api/lessons/{self.lesson_1.id}/"),
+            ("get", f"/api/lessons/{self.lesson_1.id}/questions/"),
+            ("post", f"/api/lessons/{self.lesson_1.id}/answer/"),
         ]
 
         for method, url in requests:
@@ -346,3 +351,184 @@ class LessonAPITests(APITestCase):
         with self.assertNumQueries(2):
             self.client.get(f"/api/lessons/{self.lesson.id}/")
 
+
+def make_quiz_course():
+    """Lesson 1 and 2 of a course, enough items that every question gets 4 options."""
+    course = Course.objects.create(
+        title="Marathi from English",
+        source_language="English",
+        target_language="Marathi",
+    )
+    lesson_1 = Lesson.objects.create(course=course, order=1, title="Lesson 1")
+    lesson_2 = Lesson.objects.create(course=course, order=2, title="Lesson 2")
+    characters = [
+        ("अ", "a"),
+        ("आ", "aa"),
+        ("इ", "i"),
+        ("ई", "ii"),
+        ("उ", "u"),
+        ("ऊ", "uu"),
+    ]
+    words = [
+        ("आई", "aaii", "mother"),
+        ("आंबा", "aambaa", "mango"),
+        ("उशी", "ushii", "pillow"),
+        ("ऊस", "uus", "sugarcane"),
+    ]
+    order = 1
+    for text, transliteration in characters:
+        Item.objects.create(
+            lesson=lesson_1,
+            order=order,
+            kind="character",
+            text=text,
+            transliteration=transliteration,
+        )
+        order += 1
+    for text, transliteration, meaning in words:
+        Item.objects.create(
+            lesson=lesson_1,
+            order=order,
+            kind="word",
+            text=text,
+            transliteration=transliteration,
+            meaning=meaning,
+        )
+        order += 1
+    Item.objects.create(
+        lesson=lesson_2, order=1, kind="character", text="ए", transliteration="e"
+    )
+    return lesson_1, lesson_2
+
+
+class BuildQuestionsTests(TestCase):
+    def setUp(self):
+        self.lesson_1, self.lesson_2 = make_quiz_course()
+
+    def test_questions_are_well_formed_for_any_seed(self):
+        lesson_item_ids = set(self.lesson_1.items.values_list("id", flat=True))
+
+        for seed in range(10):
+            with self.subTest(seed=seed):
+                built = questions.build_questions(self.lesson_1, random.Random(seed))
+
+                # One question per item of this lesson, and none from other lessons.
+                self.assertEqual({q["item"].id for q in built}, lesson_item_ids)
+                for question in built:
+                    labels = [option["main"] for option in question["options"]]
+                    self.assertEqual(len(labels), 4)
+                    self.assertEqual(len(set(labels)), 4)
+                    correct = question["options"][question["answer"]]
+                    self.assertIn(correct["main"], vars(question["item"]).values())
+
+    def test_same_seed_gives_same_questions(self):
+        first = questions.build_questions(self.lesson_1, random.Random(1))
+        second = questions.build_questions(self.lesson_1, random.Random(1))
+
+        self.assertEqual(first, second)
+
+    def test_later_lesson_uses_earlier_items_as_wrong_options(self):
+        # Lesson 2 has a single character, so its wrong options must come from lesson 1.
+        built = questions.build_questions(self.lesson_2, random.Random(0))
+
+        self.assertEqual(len(built), 1)
+        self.assertEqual(len(built[0]["options"]), 4)
+
+
+class QuestionApiTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="sagar", email="sagar@example.com", password=PASSWORD
+        )
+        self.lesson_1, self.lesson_2 = make_quiz_course()
+        self.client.force_authenticate(self.user)
+
+    def get_questions(self, lesson):
+        return self.client.get(f"/api/lessons/{lesson.id}/questions/")
+
+    def answer(self, lesson, **body):
+        return self.client.post(
+            f"/api/lessons/{lesson.id}/answer/", body, format="json"
+        )
+
+    def make_token(self, lesson, answer):
+        """A real token whose answer the test knows, since the API never reveals it."""
+        item = lesson.items.first()
+        return signing.dumps(
+            {"lesson": lesson.id, "item": item.id, "answer": answer},
+            salt=questions.ANSWER_TOKEN_SALT,
+        )
+
+    def test_unknown_lesson_returns_404(self):
+        self.assertEqual(
+            self.client.get("/api/lessons/999/questions/").status_code, 404
+        )
+
+    def test_questions_do_not_reveal_the_answer(self):
+        response = self.get_questions(self.lesson_1)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 10)
+        for question in response.json():
+            self.assertEqual(set(question), {"token", "type", "prompt", "options"})
+
+    def test_questions_load_in_two_queries(self):
+        # One for the lesson and one for every candidate item.
+        with self.assertNumQueries(2):
+            self.get_questions(self.lesson_1)
+
+    def test_token_from_the_questions_endpoint_can_be_answered(self):
+        token = self.get_questions(self.lesson_1).json()[0]["token"]
+
+        response = self.answer(self.lesson_1, token=token, choice=0)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.json()), {"correct", "correct_choice"})
+
+    def test_correct_choice(self):
+        token = self.make_token(self.lesson_1, answer=2)
+
+        response = self.answer(self.lesson_1, token=token, choice=2)
+
+        self.assertEqual(response.json(), {"correct": True, "correct_choice": 2})
+
+    def test_wrong_choice_reports_the_correct_one(self):
+        token = self.make_token(self.lesson_1, answer=2)
+
+        response = self.answer(self.lesson_1, token=token, choice=0)
+
+        self.assertEqual(response.json(), {"correct": False, "correct_choice": 2})
+
+    def test_tampered_token_is_rejected(self):
+        token = self.make_token(self.lesson_1, answer=2)
+        # Change one character of the signature at the end.
+        tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+
+        response = self.answer(self.lesson_1, token=tampered, choice=2)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("token", response.json())
+
+    def test_token_signed_with_another_salt_is_rejected(self):
+        token = signing.dumps({"lesson": self.lesson_1.id, "item": 1, "answer": 0})
+
+        response = self.answer(self.lesson_1, token=token, choice=0)
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_token_from_another_lesson_is_rejected(self):
+        token = self.make_token(self.lesson_1, answer=2)
+
+        response = self.answer(self.lesson_2, token=token, choice=2)
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_choice_out_of_range_is_rejected(self):
+        token = self.make_token(self.lesson_1, answer=2)
+
+        for choice in (-1, 4):
+            with self.subTest(choice=choice):
+                response = self.answer(self.lesson_1, token=token, choice=choice)
+
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("choice", response.json())

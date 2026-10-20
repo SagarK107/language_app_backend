@@ -35,6 +35,13 @@ class ItemSerializer(serializers.ModelSerializer):
         fields = ["id", "kind", "text", "transliteration", "meaning", "hint", "order"]
 
 
+class AnswerSerializer(serializers.Serializer):
+    """Input for POST /lessons/<id>/answer/. Not a ModelSerializer: nothing is saved."""
+
+    token = serializers.CharField()
+    choice = serializers.IntegerField(min_value=0, max_value=3)
+
+
 class LessonDetailSerializer(serializers.ModelSerializer):
     items = ItemSerializer(many=True, read_only=True)
 
