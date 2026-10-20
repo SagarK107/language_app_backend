@@ -10,8 +10,13 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
+
+load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -19,13 +24,25 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-30%(!j$e_jce=w!w3-9b(6h3b+sttl8#1o@$-_4_$*-swo)32t"
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DEBUG", "") == "True"
 
-ALLOWED_HOSTS: list[str] = []
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured("Set the SECRET_KEY environment variable.")
+    # Development only. This key is public on GitHub, so it must never sign real data.
+    SECRET_KEY = "django-insecure-30%(!j$e_jce=w!w3-9b(6h3b+sttl8#1o@$-_4_$*-swo)32t"  # noqa: S105
+
+
+# The domain names this server answers to, e.g. "myapp.onrender.com,localhost".
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("ALLOWED_HOSTS", "").split(",")
+    if host.strip()
+]
+
 
 AUTHENTICATION_BACKENDS = ["accounts.backends.EmailOrUsernameBackend"]
 
