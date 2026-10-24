@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
@@ -22,6 +23,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Local development settings (DEBUG=True). The file is gitignored; on the
 # server the host's environment variables are used instead.
 load_dotenv(BASE_DIR / ".env")
+
+
+def env_list(name, default=""):
+    """A comma-separated environment variable as a list: "a, b," → ["a", "b"]."""
+    return [
+        value.strip()
+        for value in os.environ.get(name, default).split(",")
+        if value.strip()
+    ]
 
 
 # Quick-start development settings - unsuitable for production
@@ -40,25 +50,35 @@ if not SECRET_KEY:
 
 
 # The domain names this server answers to, e.g. "myapp.onrender.com,localhost".
-ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.environ.get("ALLOWED_HOSTS", "").split(",")
-    if host.strip()
-]
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS")
 
 
 AUTHENTICATION_BACKENDS = ["accounts.backends.EmailOrUsernameBackend"]
 
-# The Next.js dev server. It runs on a different port, so the browser treats it
-# as a different origin and needs explicit permission to call this API.
-FRONTEND_ORIGINS = ["http://localhost:3000"]
-
-# CORS: which origins may read API responses, and whether cookies may be sent.
-CORS_ALLOWED_ORIGINS = FRONTEND_ORIGINS
-CORS_ALLOW_CREDENTIALS = True
+# Where the Next.js frontend runs, e.g. "https://myapp.vercel.app".
+# The browser sends API calls to the frontend's own domain and Next.js forwards
+# them here, but the browser's Origin header still names the frontend.
+FRONTEND_ORIGINS = env_list("FRONTEND_ORIGINS", "http://localhost:3000")
 
 # CSRF: which origins may send state-changing requests (POST, PATCH, DELETE).
 CSRF_TRUSTED_ORIGINS = FRONTEND_ORIGINS
+
+# CORS: only needed if the browser calls this API directly from another origin.
+# With the Next.js /api proxy it does not, but this keeps direct calls working.
+CORS_ALLOWED_ORIGINS = FRONTEND_ORIGINS
+CORS_ALLOW_CREDENTIALS = True
+
+if not DEBUG:
+    # The host (Render) handles HTTPS and forwards plain HTTP to gunicorn, marking
+    # the original scheme in this header. Without it Django thinks every request
+    # is insecure and secure cookies break.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    # Only send the session and CSRF cookies over HTTPS.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Tells browsers to use HTTPS only for this site. Kept short at first,
+    # because browsers remember it; raise it once the deploy is stable.
+    SECURE_HSTS_SECONDS = 3600
 
 # Application definition
 
@@ -117,11 +137,15 @@ AUTH_USER_MODEL = "accounts.User"
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
+# PostgreSQL in production (the host sets DATABASE_URL), SQLite locally.
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+    "default": dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        # Reuse a connection for up to 10 minutes instead of opening one per request.
+        conn_max_age=600,
+        # Checks a reused connection still works, e.g. after the database restarted.
+        conn_health_checks=True,
+    )
 }
 
 
